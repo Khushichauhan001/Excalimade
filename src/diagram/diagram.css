@@ -1,0 +1,19 @@
+.dg-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 16px; min-height: 380px; }
+.dg-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dg-code, .dg-prompt { flex: 1; min-height: 200px; resize: vertical; padding: 10px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--input-bg); color: var(--text); font: 13px/1.5 ui-monospace, "Cascadia Code", monospace; }
+.dg-prompt { font-family: var(--ui-font); font-size: 14px; flex: none; min-height: 110px; }
+.dg-examples, .dg-history { display: flex; flex-wrap: wrap; gap: 6px; }
+.dg-chip { border: 1px solid var(--border); background: var(--button-bg); color: var(--text); border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+.dg-chip:hover, .dg-chip.is-active { background: var(--button-active); border-color: var(--color-primary); }
+.dg-preview { position: relative; border-radius: var(--radius); background: repeating-conic-gradient(var(--button-bg) 0 25%, transparent 0 50%) 0 0 / 16px 16px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; overflow: auto; min-height: 300px; }
+.dg-preview__svg { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 12px; }
+.dg-preview__svg svg { max-width: 100%; max-height: 440px; height: auto; background: #fff; border-radius: 6px; }
+.theme--dark .dg-preview__svg svg { filter: invert(93%) hue-rotate(180deg); }
+.dg-empty { position: absolute; color: var(--text-muted); font-size: 13px; }
+.dg-error { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); border-radius: var(--radius); padding: 8px 10px; font-size: 13px; }
+.dg-preview .dg-error { position: absolute; left: 10px; right: 10px; bottom: 10px; }
+.dg-setup { margin-top: 6px; color: var(--text); font-family: ui-monospace, monospace; font-size: 12px; }
+.dg-hint { font-size: 12px; color: var(--text-muted); margin: 0; }
+.dg-steps { line-height: 1.9; padding-left: 20px; }
+.dg-result { width: 100%; height: min(60vh, 520px); border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
+@media (max-width: 729px) { .dg-split { grid-template-columns: 1fr; } }
