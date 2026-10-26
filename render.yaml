@@ -1,0 +1,17 @@
+# Render blueprint for the realtime collaboration relay (WebSockets).
+# The web app itself is deployed on Vercel; see README → Deployment.
+services:
+  - type: web
+    name: excalimade-relay
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npx tsx server/index.ts
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: ALLOWED_ORIGINS
+        value: https://excalimade.vercel.app
+      - key: BLOB_READ_WRITE_TOKEN
+        sync: false

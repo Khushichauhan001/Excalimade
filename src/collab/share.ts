@@ -41,8 +41,10 @@ export async function createShareLink(): Promise<{ link: string; embed: string }
     const keyStr = await generateKey();
     const key = await importKey(keyStr);
     const bytes = await encryptBytes(key, await gzip(JSON.stringify(serializeCurrentScene())));
-    if (bytes.length > 10 * 1024 * 1024) {
-      showToast("This scene is too large to share as a link (10 MB max). Try removing some images.", "error");
+    // Vercel functions cap uploads at 4.5 MB (server enforces it too)
+    const maxMb = Number(import.meta.env.VITE_SHARE_MAX_MB) || 4;
+    if (bytes.length > maxMb * 1024 * 1024) {
+      showToast(`This scene is too large to share as a link (${maxMb} MB max after compression). Try removing or shrinking some images.`, "error");
       return null;
     }
     const res = await fetch("/api/share", {
@@ -125,5 +127,7 @@ export function makeEditableCopy() {
   getState().setAppState({ viewModeEnabled: false, zenModeEnabled: false, activeTool: "selection" });
   history.replaceState(history.state, "", location.pathname);
   emit("sceneLoaded", { source: "local" });
-  showToast("You're now editing your own copy", "success");
+  const title = getState().appState.name && getState().appState.name !== "Untitled drawing" ? `${getState().appState.name} (copy)` : "Shared drawing";
+  void import("../workspace/store").then((m) => m.saveCanvasAsNewScene(title));
+  showToast("Saved a copy to your workspace", "success");
 }

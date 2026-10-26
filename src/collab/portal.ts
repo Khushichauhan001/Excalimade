@@ -1,6 +1,16 @@
 // WebSocket connection to the relay with reconnect/backoff and liveness checks (tab sleep, network loss).
 
-export type PortalStatus = "connecting" | "connected" | "offline";
+export type PortalStatus = "connecting" | "connected" | "reconnecting" | "offline";
+
+/** After this many failed attempts in a row the relay counts as unreachable ("Offline"). */
+const MAX_SILENT_RETRIES = 8;
+
+/**
+ * Relay URL. In production the app is on Vercel (no WebSockets) and the relay runs elsewhere,
+ * configured with VITE_WS_URL (e.g. wss://excalimade-relay.onrender.com/ws). Locally: same host.
+ */
+export const relayUrl = () =>
+  (import.meta.env.VITE_WS_URL as string | undefined) || `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 
 export interface ServerMessage {
   type: string;
@@ -33,6 +43,7 @@ export class Portal {
     this.onStatus = onStatus;
     this.onOpen = onOpen;
     window.addEventListener("online", this.handleOnline);
+    window.addEventListener("offline", this.handleOffline);
     document.addEventListener("visibilitychange", this.handleVisibility);
     this.connect();
   }
@@ -44,8 +55,8 @@ export class Portal {
   private connect() {
     if (this.closed) return;
     clearTimeout(this.reconnectTimer);
-    this.onStatus("connecting");
-    const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+    this.onStatus(this.currentFailureStatus());
+    const url = relayUrl();
     let ws: WebSocket;
     try {
       ws = new WebSocket(url);
@@ -80,12 +91,22 @@ export class Portal {
       this.ws = null;
       this.stopPing();
       if (!this.closed) {
-        this.onStatus("offline");
         this.scheduleReconnect();
+        this.onStatus(this.currentFailureStatus());
       }
     };
     ws.onerror = () => ws.close();
   }
+
+  /** "Offline" only when the browser is offline or the relay stayed unreachable through many retries. */
+  private currentFailureStatus(): PortalStatus {
+    if (!navigator.onLine || this.attempt >= MAX_SILENT_RETRIES) return "offline";
+    return this.attempt === 0 ? "connecting" : "reconnecting";
+  }
+
+  private handleOffline = () => {
+    if (!this.isOpen) this.onStatus("offline");
+  };
 
   private scheduleReconnect() {
     if (this.closed) return;
@@ -108,7 +129,6 @@ export class Portal {
         /* ignore */
       }
     }
-    this.onStatus("offline");
     this.attempt = 0;
     this.connect();
   }
@@ -152,6 +172,7 @@ export class Portal {
     clearTimeout(this.reconnectTimer);
     this.stopPing();
     window.removeEventListener("online", this.handleOnline);
+    window.removeEventListener("offline", this.handleOffline);
     document.removeEventListener("visibilitychange", this.handleVisibility);
     const ws = this.ws;
     this.ws = null;

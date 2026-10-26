@@ -4,6 +4,7 @@ import { Canvas } from "./canvas/Canvas";
 import { UILayer } from "./ui/UILayer";
 import { IOLayer } from "./io/IOLayer";
 import { CollabLayer } from "./collab/CollabLayer";
+import { WorkspaceLayer } from "./workspace/WorkspaceLayer";
 
 // Heavier, rarely-opened features load on demand to keep the initial bundle small.
 const DiagramLayer = lazy(() => import("./diagram/DiagramLayer"));
@@ -22,6 +23,7 @@ export default function App() {
       <Canvas />
       <CollabLayer />
       <UILayer />
+      <WorkspaceLayer />
       <IOLayer />
       <Suspense fallback={null}>
         <DiagramLayer />

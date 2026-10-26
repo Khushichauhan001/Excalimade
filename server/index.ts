@@ -24,6 +24,7 @@ const MIME: Record<string, string> = {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   try {
+    if (url.pathname === "/health") return sendJson(res, 200, { ok: true });
     if (url.pathname.startsWith("/api/")) {
       for (const h of handlers) if (await h(req, res, url)) return;
       return sendJson(res, 404, { error: "Not found" });
@@ -45,7 +46,15 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 50 * 1024 * 1024 });
+// ALLOWED_ORIGINS="https://excalimade.vercel.app,https://my-domain.com" restricts which sites may open
+// collaboration sockets (the relay only ever sees ciphertext, this just stops other sites using it).
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "").split(",").map((o) => o.trim()).filter(Boolean);
+const wss = new WebSocketServer({
+  server,
+  path: "/ws",
+  maxPayload: 50 * 1024 * 1024,
+  verifyClient: ({ origin }: { origin?: string }) => !allowedOrigins.length || !origin || allowedOrigins.includes(origin),
+});
 wss.on("connection", (socket, req) => handleCollabSocket(socket, req));
 
 server.listen(PORT, () => console.log(`Excalimade server on http://localhost:${PORT}`));

@@ -7,6 +7,7 @@ import { CANVAS_LIGHT } from "./lib/colors";
 
 // [action id, label override]; items whose action isn't registered are skipped
 const SECTIONS: [string, string?][][] = [
+  [["workspace.toggle"], ["workspace.newScene"]],
   [["io.open"], ["io.save"], ["io.saveAs"], ["io.exportImage"], ["io.exportPdf"], ["cloud.saveAs", "Save to Excalimade+"]],
   [["collab.start", "Live collaboration…"], ["io.present", "Present frames"], ["ui.commandPalette"], ["ui.find"], ["ui.help"], ["edit.clearCanvas", "Reset the canvas"]],
   [["cloud.open", "My scenes (sign in)"], ["io.install"]],

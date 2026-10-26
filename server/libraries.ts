@@ -6,7 +6,7 @@ import path from "node:path";
 import { sendJson, type ApiHandler } from "./http";
 
 const UPSTREAM = "https://libraries.excalidraw.com";
-const DATA_DIR = path.resolve(import.meta.dirname, "data");
+import { DATA_DIR } from "./storage";
 const LIST_FILE = path.join(DATA_DIR, "libraries.json");
 const FILE_DIR = path.join(DATA_DIR, "libraries");
 const TTL = 6 * 60 * 60 * 1000;

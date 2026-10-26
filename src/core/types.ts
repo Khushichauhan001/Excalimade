@@ -221,7 +221,8 @@ export type DialogName =
   | "fonts"
   | "command-palette"
   | "find"
-  | "clear-canvas";
+  | "clear-canvas"
+  | "slides";
 
 export interface AppState {
   // viewport
@@ -273,6 +274,8 @@ export interface AppState {
   viewModeEnabled: boolean;
   statsOpen: boolean;
   presentationMode: { frameIndex: number } | null;
+  /** Presentation settings saved with the scene: custom frame order and frames skipped as slides. */
+  slides: { order: string[]; hidden: string[] };
 
   // ui
   openDialog: DialogName;

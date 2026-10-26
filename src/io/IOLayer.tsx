@@ -6,6 +6,7 @@ import { isRestorePending, restoreFromLocal, restoreFromLocalSync, startAutosave
 import { handleIncomingFiles } from "./files";
 import { PromptHost, IoDialog } from "./Dialog";
 import { PresenterControls } from "./PresenterControls";
+import { SlidesPanel } from "./SlidesPanel";
 import { initPWA } from "./pwa";
 import { LIBRARY_DRAG_MIME, getLibraryItem, insertLibraryItems, loadLibrary } from "../library/store";
 import { handleAddLibraryHash } from "../library/addLibraryHash";
@@ -79,6 +80,7 @@ export function IOLayer() {
         {openSidebar === "library" && <LibrarySidebar />}
       </Suspense>
       {openDialog === "export-json" && <SaveDialog onClose={closeDialog} />}
+      {openDialog === "slides" && <SlidesPanel />}
       <PresenterControls />
       {dragging && (
         <div className="io-dropzone" aria-hidden="true">

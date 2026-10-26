@@ -49,7 +49,7 @@ export function Avatars() {
       {status !== "connected" && (
         <button className={`cb-conn cb-conn--${status}`} onClick={openDialog} title="Collaboration connection">
           <IconWifiOff />
-          <span>{status === "offline" ? "Offline" : "Connecting…"}</span>
+          <span>{status === "offline" ? "Offline" : status === "reconnecting" ? "Reconnecting…" : "Connecting…"}</span>
         </button>
       )}
       {status === "connected" && syncing && (
@@ -235,7 +235,7 @@ export function SharedViewBanner() {
       <IconEye />
       <span>Read-only view</span>
       <span aria-hidden="true">·</span>
-      <button onClick={makeEditableCopy}>Make a copy to edit</button>
+      <button onClick={makeEditableCopy}>Save a copy to my workspace</button>
     </div>
   );
 }

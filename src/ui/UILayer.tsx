@@ -21,6 +21,7 @@ export function UILayer() {
   const canUndo = useStore((s) => s.undoStack.length > 0);
   const canRedo = useStore((s) => s.redoStack.length > 0);
   const panel = usePanelVisible();
+  const hasFrames = useStore((s) => s.elements.some((e) => e.type === "frame" && !e.isDeleted));
   const [styleOpen, setStyleOpen] = useState(false);
 
   useEffect(() => {
@@ -43,6 +44,11 @@ export function UILayer() {
       {!as.zenModeEnabled && (
         <div className="ui-topright">
           <div id="ui-topright-slot" />
+          {hasFrames && (
+            <button className="ui-btn" title="Present frames as slides" onClick={() => set({ openDialog: "slides" })}>
+              Present
+            </button>
+          )}
           <button className="ui-btn ui-btn--primary" onClick={() => set({ openDialog: "collab" })}>
             Share{collabCount ? ` · ${collabCount}` : ""}
           </button>

@@ -367,6 +367,10 @@ export function restoreAppState(raw: unknown): Partial<PersistedAppState> {
   if (Number.isFinite(r.gridSize) && (r.gridSize as number) > 0) out.gridSize = r.gridSize as number;
   if (typeof r.objectsSnapModeEnabled === "boolean") out.objectsSnapModeEnabled = r.objectsSnapModeEnabled;
   if (typeof r.name === "string" && r.name) out.name = r.name;
+  // slide settings belong to the scene: always set them so another scene's order never leaks in
+  const sl = r.slides as { order?: unknown; hidden?: unknown } | undefined;
+  const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 1000) : []);
+  out.slides = { order: ids(sl?.order), hidden: ids(sl?.hidden) };
   if (typeof r.username === "string") out.username = r.username;
   if (typeof r.currentItemStrokeColor === "string") out.currentItemStrokeColor = r.currentItemStrokeColor;
   if (typeof r.currentItemBackgroundColor === "string") out.currentItemBackgroundColor = r.currentItemBackgroundColor;

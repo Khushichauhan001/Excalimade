@@ -972,6 +972,12 @@ export function stopSession() {
 
   getState().setAppState({ collaborators: {}, followingUserId: null });
   setCollab({ ...initialCollabState() });
+  if (s.mode === "join" && s.initialSynced) {
+    // the joined room's drawing becomes a new scene; the scene that was open before stays untouched
+    discardBackup();
+    const title = `Live session ${new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
+    void import("../workspace/store").then((m) => m.saveCanvasAsNewScene(title));
+  }
   if (s.updateUrl && location.hash.startsWith("#room=")) {
     history.replaceState(history.state, "", `${location.pathname}${location.search}`);
   }

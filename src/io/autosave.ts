@@ -4,11 +4,11 @@ import type { AppState, BinaryFile, ExcalidrawElement, ImageElement } from "../c
 import { on } from "../core/events";
 import { gzip, gunzip, base64ToBytes } from "../core/utils";
 import { isCollabUrl, shouldPauseAutosave } from "../collab/api";
-import { idbGet, idbSet, idbKeys, idbPutMany, isQuotaError } from "./idb";
+import { idbGet, idbKeys, idbPutMany, isQuotaError } from "./idb";
+import { repo, loadOrCreateMeta, type WorkspaceMeta } from "../workspace/repo";
 import { serializeSceneObject, parseScene, applyScene, pickPersistedAppState, type RestoredScene } from "./serialize";
 import { PERSISTED_APPSTATE_KEYS } from "../core/store";
 
-const SCENE_KEY = "current";
 const SAVE_DELAY = 500;
 /** Files written less than this long ago are never garbage-collected (another tab may be mid-save). */
 const GC_GRACE_MS = 5 * 60_000;
@@ -54,8 +54,16 @@ const blobToDataURL = (blob: Blob) =>
 const referencedFileIds = (elements: readonly ExcalidrawElement[]) =>
   new Set(elements.filter((e) => e.type === "image" && !e.isDeleted).map((e) => (e as ImageElement).fileId));
 
-async function readStoredScene(): Promise<{ scene: RestoredScene; updated: number } | null> {
-  const rec = await idbGet<StoredScene>("scene", SCENE_KEY);
+/** Scene (workspace node id) that autosave reads from and writes to. */
+let activeSceneId: string | null = null;
+export const getActiveSceneId = () => activeSceneId;
+let metaPromise: Promise<WorkspaceMeta> | null = null;
+/** Workspace tree as loaded at startup (migrates single-scene data on first run). */
+export const getInitialMeta = () => (metaPromise ??= loadOrCreateMeta());
+
+async function readStoredScene(id = activeSceneId): Promise<{ scene: RestoredScene; updated: number } | null> {
+  if (!id) return null;
+  const rec = await repo.readScene(id);
   if (!rec) return null;
   const scene = parseScene(await gunzip(rec.data));
   const ids = referencedFileIds(scene.elements);
@@ -86,7 +94,11 @@ on("sceneLoaded", ({ source }) => {
 /** Start reading the stored scene as early as possible (module load), so it's ready before first paint. */
 export function prefetchLocal() {
   if (!prefetch) {
-    prefetch = readStoredScene()
+    prefetch = getInitialMeta()
+      .then((meta) => {
+        activeSceneId = meta.activeId;
+        return readStoredScene();
+      })
       .catch((e) => {
         console.warn("Local scene could not be read", e);
         return null;
@@ -118,7 +130,7 @@ function applyLocal(data: { scene: RestoredScene; updated: number } | null) {
     applyingLocal = false;
   }
   lastSnapshot = snapshot();
-  void collectGarbage(referencedFileIds(data.scene.elements));
+  setTimeout(() => void collectGarbage(), 3000);
 }
 
 /** Apply synchronously if the prefetch already finished; returns false if still pending. */
@@ -136,8 +148,17 @@ export async function restoreFromLocal(): Promise<void> {
   applyLocal(data);
 }
 
-async function collectGarbage(keep: Set<string>) {
+/** Delete stored images that no scene in the workspace references any more. */
+async function collectGarbage() {
   try {
+    const keep = referencedFileIds(getState().elements);
+    for (const [, rec] of await repo.allScenes()) {
+      try {
+        for (const id of referencedFileIds(parseScene(await gunzip(rec.data)).elements)) keep.add(id);
+      } catch {
+        return; // never delete images if any scene can't be read
+      }
+    }
     const keys = await idbKeys("files");
     const now = Date.now();
     const stale: string[] = [];
@@ -171,7 +192,7 @@ const snapshot = (): Snapshot => {
 
 export async function saveToLocalNow() {
   clearTimeout(timer);
-  if (!dirty || autosaveDisabled() || !restored) return;
+  if (!dirty || autosaveDisabled() || !restored || !activeSceneId) return;
   dirty = false;
   const scene = serializeSceneObject({ compat: false });
   const { files, ...withoutFiles } = scene;
@@ -187,10 +208,10 @@ export async function saveToLocalNow() {
       newFiles.forEach((f) => savedFileIds!.add(f.id));
     }
     const rec: StoredScene = { data: await gzip(JSON.stringify(withoutFiles)), updated: now, tab: TAB_ID };
-    await idbSet("scene", SCENE_KEY, rec);
+    await repo.writeScene(activeSceneId, rec);
     lastStoredUpdate = now;
     pendingRemote = false;
-    channel?.postMessage({ type: "saved", tab: TAB_ID, updated: now });
+    channel?.postMessage({ type: "saved", tab: TAB_ID, updated: now, sceneId: activeSceneId });
   } catch (e) {
     dirty = true;
     if (isQuotaError(e)) {
@@ -255,7 +276,7 @@ export function startAutosave() {
     schedule();
   });
   const onMessage = (e: MessageEvent) => {
-    if (e.data?.type !== "saved" || e.data.tab === TAB_ID) return;
+    if (e.data?.type !== "saved" || e.data.tab === TAB_ID || e.data.sceneId !== activeSceneId) return;
     if (isIdle() && !dirty) void reloadFromStorage();
     else pendingRemote = true;
   };
@@ -280,4 +301,67 @@ export function startAutosave() {
     document.removeEventListener("visibilitychange", onWake);
     window.removeEventListener("pagehide", onPageHide);
   };
+}
+
+// ---- workspace scene switching -------------------------------------------------------------------
+
+const PREFERENCE_KEYS = new Set(["theme", "username"]);
+
+/**
+ * Make `id` the scene autosave works on.
+ * - load: true  → save the current scene, then load `id` into the editor.
+ * - load: false → keep the canvas as it is and store it as `id` (e.g. "save a copy to my workspace").
+ * Set `saveCurrent: false` when the current scene was just deleted.
+ */
+export async function switchScene(id: string, opts: { load: boolean; saveCurrent?: boolean; title?: string }) {
+  clearTimeout(timer);
+  if (opts.saveCurrent !== false && activeSceneId) await saveToLocalNow();
+  else dirty = false;
+  activeSceneId = id;
+  if (!opts.load) {
+    if (opts.title) getState().setAppState({ name: opts.title });
+    lastSnapshot = snapshot();
+    dirty = true;
+    await saveToLocalNow();
+    return;
+  }
+  const data = await readStoredScene(id).catch(() => null);
+  if (activeSceneId !== id) return; // switched again meanwhile
+  applyingLocal = true;
+  try {
+    if (data) {
+      const appState = Object.fromEntries(
+        Object.entries(data.scene.appState).filter(([k]) => !PREFERENCE_KEYS.has(k) && !k.startsWith("currentItem")),
+      );
+      applyScene({ ...data.scene, appState: { ...appState, ...(opts.title ? { name: opts.title } : {}) } }, "local", { applyPreferences: false, fit: false });
+    } else {
+      applyScene({ elements: [], files: {}, appState: { scrollX: 0, scrollY: 0, zoom: 1, ...(opts.title ? { name: opts.title } : {}) } }, "local", { applyPreferences: false, fit: false });
+    }
+  } finally {
+    applyingLocal = false;
+  }
+  lastStoredUpdate = data?.updated ?? 0;
+  lastSnapshot = snapshot();
+}
+
+/** Read any stored scene (elements, appState and its images) — used by workspace export/duplicate. */
+export async function readSceneWithFiles(id: string): Promise<RestoredScene | null> {
+  if (id === activeSceneId) await saveToLocalNow();
+  return (await readStoredScene(id))?.scene ?? null;
+}
+
+/** Store a complete scene (with images) under a workspace id without loading it into the editor. */
+export async function writeSceneWithFiles(id: string, scene: RestoredScene) {
+  const now = Date.now();
+  const files = Object.values(scene.files ?? {});
+  if (files.length) {
+    await idbPutMany(
+      "files",
+      files.map((f) => [f.id, { id: f.id, mimeType: f.mimeType, created: f.created, savedAt: now, blob: dataURLToBlob(f.dataURL) } satisfies StoredFile]),
+    );
+    savedFileIds?.clear();
+    savedFileIds = null;
+  }
+  const { files: _files, ...rest } = { type: "excalidraw", version: 2, source: "excalimade", ...scene };
+  await repo.writeScene(id, { data: await gzip(JSON.stringify(rest)), updated: now, tab: TAB_ID });
 }

@@ -63,6 +63,18 @@ export function PresenterControls() {
           break;
       }
     };
+    // a plain click on the slide advances (drags pan, the laser draws)
+    let down: { x: number; y: number } | null = null;
+    const onDown = (e: PointerEvent) => {
+      down = e.target instanceof HTMLCanvasElement && e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
+    };
+    const onUp = (e: PointerEvent) => {
+      if (!down || useStore.getState().appState.activeTool === "laser") return;
+      if (Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5) nextSlide();
+      down = null;
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
     let touch: { x: number; y: number; t: number } | null = null;
     const onTouchStart = (e: TouchEvent) => {
       touch = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() } : null;
@@ -96,6 +108,8 @@ export function PresenterControls() {
     return () => {
       clearTimeout(idleTimer.current);
       window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
       window.removeEventListener("touchstart", onTouchStart);
       window.removeEventListener("touchend", onTouchEnd);
       window.removeEventListener("pointermove", wake);

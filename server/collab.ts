@@ -5,14 +5,10 @@
 // only ever sees room ids, socket ids and opaque {iv, data} blobs.
 import type http from "node:http";
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
+import { getObject, putObject } from "./storage";
 import type { WebSocket, RawData } from "ws";
 import { sendJson, type ApiHandler } from "./http";
 
-const DATA_DIR = path.resolve(import.meta.dirname, "data");
-const ROOMS_DIR = path.join(DATA_DIR, "rooms");
-const SHARES_DIR = path.join(DATA_DIR, "shares");
 
 const ROOM_ID_RE = /^[a-f0-9]{20,40}$/;
 const SOCKET_ID_RE = /^[a-f0-9]{16}$/;
@@ -38,7 +34,8 @@ const RATE_PER_SEC = 400; // messages per socket per second (cursors are ~30/s)
 
 const SNAPSHOT_CACHE_BYTES = 256 * 1024 * 1024;
 const SNAPSHOT_CACHE_ENTRIES = 1000;
-const SHARE_MAX_BYTES = 10 * 1024 * 1024;
+// Vercel functions accept request bodies up to 4.5 MB; the standalone server allows 10 MB.
+export const SHARE_MAX_BYTES = (process.env.VERCEL ? 4 : 10) * 1024 * 1024;
 
 interface Client {
   id: string;
@@ -86,20 +83,14 @@ function cacheGet(roomId: string) {
   return buf;
 }
 
-const roomFile = (roomId: string) => path.join(ROOMS_DIR, `${roomId}.bin`);
-
-async function writeAtomic(file: string, buf: Buffer) {
-  await fs.promises.mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${crypto.randomBytes(4).toString("hex")}.tmp`;
-  await fs.promises.writeFile(tmp, buf);
-  await fs.promises.rename(tmp, file);
-}
+const roomKey = (roomId: string) => `rooms/${roomId}.bin`;
 
 async function loadSnapshot(roomId: string): Promise<Buffer | null> {
   const cached = cacheGet(roomId);
   if (cached) return cached;
   try {
-    const buf = await fs.promises.readFile(roomFile(roomId));
+    const buf = await getObject(roomKey(roomId));
+    if (!buf) return null;
     persistentRooms.add(roomId);
     cachePut(roomId, buf);
     return buf;
@@ -304,7 +295,7 @@ async function onMessage(c: Client, raw: RawData, isBinary: boolean) {
       const buf = Buffer.concat([iv, data]);
       cachePut(roomId, buf);
       if (msg.persistent === true) persistentRooms.add(roomId);
-      if (persistentRooms.has(roomId)) await writeAtomic(roomFile(roomId), buf);
+      await putObject(roomKey(roomId), buf); // every room survives everyone leaving / server restarts
       send(c, { type: "snapshot-ack", roomId });
       return;
     }
@@ -341,12 +332,12 @@ function shareRateLimited(ip: string) {
 
 async function readBytes(req: http.IncomingMessage, limit: number) {
   const declared = Number(req.headers["content-length"] ?? 0);
-  if (declared > limit) throw Object.assign(new Error("Payload too large"), { status: 413 });
+  if (declared > limit) throw Object.assign(new Error(`This drawing is too large to share (max ${Math.round(limit / 1048576)} MB). Remove or shrink some images and try again.`), { status: 413 });
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > limit) throw Object.assign(new Error("Payload too large"), { status: 413 });
+    if (size > limit) throw Object.assign(new Error(`This drawing is too large to share (max ${Math.round(limit / 1048576)} MB). Remove or shrink some images and try again.`), { status: 413 });
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
@@ -362,7 +353,7 @@ export const handleShare: ApiHandler = async (req, res, url) => {
     // iv (12) + GCM tag (16) + at least one byte of ciphertext
     if (body.length < 29) return sendJson(res, 400, { error: "Empty or invalid payload" }), true;
     const id = crypto.randomBytes(10).toString("hex");
-    await writeAtomic(path.join(SHARES_DIR, `${id}.bin`), body);
+    await putObject(`shares/${id}.bin`, body);
     sendJson(res, 200, { id });
     return true;
   }
@@ -371,12 +362,8 @@ export const handleShare: ApiHandler = async (req, res, url) => {
   if (req.method !== "GET") return sendJson(res, 405, { error: "Method not allowed" }), true;
   const id = m[1];
   if (!SHARE_ID_RE.test(id)) return sendJson(res, 400, { error: "Invalid id" }), true;
-  let buf: Buffer;
-  try {
-    buf = await fs.promises.readFile(path.join(SHARES_DIR, `${id}.bin`));
-  } catch {
-    return sendJson(res, 404, { error: "Share link not found" }), true;
-  }
+  const buf = await getObject(`shares/${id}.bin`);
+  if (!buf) return sendJson(res, 404, { error: "This link doesn't exist or has expired" }), true;
   res.writeHead(200, {
     "Content-Type": "application/octet-stream",
     "Content-Length": buf.length,

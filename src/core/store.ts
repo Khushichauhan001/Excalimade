@@ -48,6 +48,7 @@ export const getDefaultAppState = (): AppState => ({
   viewModeEnabled: false,
   statsOpen: false,
   presentationMode: null,
+  slides: { order: [], hidden: [] },
 
   openDialog: null,
   openSidebar: null,
@@ -63,6 +64,7 @@ export const getDefaultAppState = (): AppState => ({
 
 /** AppState keys that are persisted with a scene / autosave. Everything else is session-only. */
 export const PERSISTED_APPSTATE_KEYS = [
+  "slides",
   "scrollX",
   "scrollY",
   "zoom",

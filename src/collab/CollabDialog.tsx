@@ -291,7 +291,9 @@ function LiveTab() {
             ? "Connected"
             : status === "offline"
               ? "Offline — your changes will sync when you reconnect"
-              : "Connecting…"}
+              : status === "reconnecting"
+                ? "Reconnecting…"
+                : "Connecting…"}
       </div>
       <NameField />
       {link && <CopyField value={link} label="Link" />}
